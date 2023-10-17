@@ -8,9 +8,13 @@ use std::{
 };
 
 use axum::{
-    http::{Request, StatusCode},
+    extract::{
+        ws::{WebSocket, WebSocketUpgrade},
+        State,
+    },
+    http::{Request, Response, StatusCode},
     response::IntoResponse,
-    routing, Router,
+    routing, Router, Server,
 };
 use eyre::{eyre, Result};
 use futures_util::future;
@@ -56,11 +60,7 @@ async fn run_ws_server(config: &NotaryServerProperties) -> Result<(), NotaryServ
         config.server.port,
     );
 
-    let listener = TcpListener::bind(notary_address)
-        .await
-        .map_err(|err| eyre!("failed to bind server address to tcp listener: {err}"))?;
-    let mut listener = AddrIncoming::from_listener(listener)
-        .map_err(|err| eyre!("failed to build hyper tcp listener: {err}"))?;
+    info!(?notary_address, "starting notary server");
 
     let notary_globals = NotaryGlobals::new(notary_signing_key, config.notarization.clone());
     let router = Router::new()
@@ -68,44 +68,14 @@ async fn run_ws_server(config: &NotaryServerProperties) -> Result<(), NotaryServ
             "/healthcheck",
             routing::get(|| async move { (StatusCode::OK, "Ok").into_response() }),
         )
-        // .route("/session", post(initialize))
-        // .route("/notarize", get(upgrade_protocol))
+        .route("/ws", routing::get(ws_handler))
         .with_state(notary_globals);
-    let mut app = router.into_make_service();
+    Server::bind(&notary_address)
+        .serve(router.into_make_service())
+        .await
+        .map_err(|err| eyre!("ws notary server run failed: {err}"))?;
 
-    loop {
-        // Poll and await for any incoming connection, ensure that all operations inside are
-        // infallible to prevent bringing down the server
-        let (prover_address, stream) =
-            match future::poll_fn(|cx| Pin::new(&mut listener).poll_accept(cx)).await {
-                Some(Ok(connection)) => (connection.remote_addr(), connection),
-                Some(Err(err)) => {
-                    error!("{}", NotaryServerError::Connection(err.to_string()));
-                    continue;
-                }
-                None => unreachable!("the poll_accept method should never return None"),
-            };
-        debug!(?prover_address, "received a prover's TCP connection");
-
-        // let protocol = protocol.clone();
-        let service = MakeService::<_, Request<hyper::Body>>::make_service(&mut app, &stream);
-
-        // Spawn a new async task to handle the new connection
-        tokio::spawn(async move {
-            info!(
-                ?prover_address,
-                "accepted prover's raw (without TLS) TCP connection",
-            );
-            // Serve different requests using the same hyper protocol and axum router
-            // let _ = protocol
-            //     // Can unwrap because it's infallible
-            //     .serve_connection(stream, service.await.unwrap())
-            //     // use with_upgrades to upgrade connection to websocket for websocket clients
-            //     // and to extract tcp connection for tcp clients
-            //     .with_upgrades()
-            //     .await;
-        });
-    }
+    Ok(())
 }
 
 /// Temporary function to load notary signing key from static file
@@ -117,4 +87,16 @@ async fn load_notary_signing_key(config: &NotarySignatureProperties) -> Result<S
 
     debug!("successfully loaded notary server's signing key");
     Ok(notary_signing_key)
+}
+
+async fn ws_handler(
+    ws: WebSocketUpgrade,
+    State(notary_globals): State<NotaryGlobals>,
+) -> impl IntoResponse {
+    ws.on_upgrade(|socket| handle_socket(socket, notary_globals))
+}
+
+async fn handle_socket(socket: WebSocket, notary_globals: NotaryGlobals) {
+    info!("received new websocket connection");
+    // ...
 }
