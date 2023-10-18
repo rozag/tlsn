@@ -3,7 +3,7 @@ mod domain;
 mod error;
 mod server;
 mod server_tracing;
-mod service;
+pub mod service;
 mod util;
 
 pub use config::{

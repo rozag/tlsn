@@ -1,5 +1,6 @@
 use notary_server::{
-    CliFields, NotaryGlobals, NotaryServerError, NotaryServerProperties, NotarySignatureProperties,
+    service, CliFields, NotarizationSessionRequest, NotaryGlobals, NotaryServerError,
+    NotaryServerProperties, NotarySignatureProperties,
 };
 
 use std::{
@@ -9,7 +10,7 @@ use std::{
 
 use axum::{
     extract::{
-        ws::{WebSocket, WebSocketUpgrade},
+        ws::{Message, WebSocket, WebSocketUpgrade},
         State,
     },
     http::{Request, Response, StatusCode},
@@ -17,7 +18,7 @@ use axum::{
     routing, Router, Server,
 };
 use eyre::{eyre, Result};
-use futures_util::future;
+use futures_util::{future, SinkExt, StreamExt};
 use hyper::server::{accept::Accept, conn::AddrIncoming};
 use p256::{ecdsa::SigningKey, pkcs8::DecodePrivateKey};
 use structopt::StructOpt;
@@ -89,14 +90,50 @@ async fn load_notary_signing_key(config: &NotarySignatureProperties) -> Result<S
     Ok(notary_signing_key)
 }
 
-async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(notary_globals): State<NotaryGlobals>,
-) -> impl IntoResponse {
-    ws.on_upgrade(|socket| handle_socket(socket, notary_globals))
+async fn ws_handler(ws: WebSocketUpgrade, state: State<NotaryGlobals>) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_socket(socket, state))
 }
 
-async fn handle_socket(socket: WebSocket, notary_globals: NotaryGlobals) {
+async fn handle_socket(mut socket: WebSocket, state: State<NotaryGlobals>) {
     info!("received new websocket connection");
+
+    let msg = socket.next().await;
+    if let None = msg {
+        error!("websocket connection closed before receiving any message");
+        return;
+    }
+
+    let msg = msg.unwrap();
+    if let Err(e) = msg {
+        error!("failed to receive message from websocket: {e}");
+        return;
+    }
+
+    let session_req_json_str = match msg.unwrap() {
+        Message::Text(text) => text,
+        Message::Binary(bytes) => match String::from_utf8(bytes) {
+            Err(e) => {
+                error!("failed to parse json str from websocket: {e}");
+                return;
+            }
+            Ok(text) => text,
+        },
+        other => {
+            error!("received unexpected message type from websocket: {other:?}");
+            return;
+        }
+    };
+
+    let session_req = serde_json::from_str::<NotarizationSessionRequest>(&session_req_json_str);
+    if let Err(e) = session_req {
+        error!("failed to parse session request json from websocket: {e}");
+        return;
+    }
+
+    let session_req = session_req.unwrap();
+
+    debug!(?session_req, "received session request from websocket");
+
     // ...
+    // service::initialize()
 }
