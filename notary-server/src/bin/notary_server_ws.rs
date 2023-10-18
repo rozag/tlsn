@@ -1,32 +1,20 @@
 use notary_server::{
-    service, CliFields, NotarizationRequestQuery, NotarizationSessionRequest, NotaryGlobals,
+    service,
+    service::axum_websocket::{Message, WebSocket},
+    service::websocket,
+    service::ProtocolUpgrade,
+    CliFields, NotarizationRequestQuery, NotarizationSessionRequest, NotaryGlobals,
     NotaryServerError, NotaryServerProperties, NotarySignatureProperties,
 };
 
-use std::{
-    net::{IpAddr, SocketAddr},
-    pin::Pin,
-};
+use std::net::{IpAddr, SocketAddr};
 
-use axum::{
-    extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
-        State,
-    },
-    http::{Request, Response, StatusCode},
-    response::IntoResponse,
-    routing, Router, Server,
-};
+use axum::{extract::State, http::StatusCode, response::IntoResponse, routing, Router, Server};
 use eyre::{eyre, Result};
-use futures_util::{future, SinkExt, StreamExt};
-use hyper::{
-    body::HttpBody,
-    server::{accept::Accept, conn::AddrIncoming},
-};
+use futures_util::StreamExt;
+use hyper::body::HttpBody;
 use p256::{ecdsa::SigningKey, pkcs8::DecodePrivateKey};
 use structopt::StructOpt;
-use tokio::net::TcpListener;
-use tower::MakeService;
 use tracing::{debug, error, info};
 
 #[tokio::main]
@@ -47,7 +35,7 @@ async fn main() -> Result<(), NotaryServerError> {
 
 #[tracing::instrument(skip(config))]
 async fn run_ws_server(config: &NotaryServerProperties) -> Result<(), NotaryServerError> {
-    if let Some(_) = &config.tls_signature {
+    if config.tls_signature.is_some() {
         return Err(NotaryServerError::Unexpected(eyre!(
             "TLS support is not yet implemented for notary_server_ws"
         )));
@@ -93,15 +81,24 @@ async fn load_notary_signing_key(config: &NotarySignatureProperties) -> Result<S
     Ok(notary_signing_key)
 }
 
-async fn ws_handler(ws: WebSocketUpgrade, state: State<NotaryGlobals>) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_socket(socket, state))
+async fn ws_handler(
+    protocol_upgrade: ProtocolUpgrade,
+    state: State<NotaryGlobals>,
+) -> impl IntoResponse {
+    match protocol_upgrade {
+        ProtocolUpgrade::Ws(ws) => ws.on_upgrade(move |socket| handle_socket(socket, state)),
+        ProtocolUpgrade::Tcp(_) => NotaryServerError::BadProverRequest(
+            "notary_server_ws can only upgrade connection to websocket".to_string(),
+        )
+        .into_response(),
+    }
 }
 
 async fn handle_socket(mut socket: WebSocket, state: State<NotaryGlobals>) {
     info!("received new websocket connection");
 
     let msg = socket.next().await;
-    if let None = msg {
+    if msg.is_none() {
         error!("websocket connection closed before receiving any message");
         return;
     }
@@ -138,13 +135,13 @@ async fn handle_socket(mut socket: WebSocket, state: State<NotaryGlobals>) {
 
     debug!(?notarization_req, "received session request from websocket");
 
-    let body_bytes = service::initialize(state, Ok(notarization_req.into()))
+    let body_bytes = service::initialize(state.clone(), Ok(notarization_req.into()))
         .await
         .into_response()
         .into_body()
         .data()
         .await;
-    if let None = body_bytes {
+    if body_bytes.is_none() {
         error!("failed to deconstruct response option from initialize");
         return;
     }
@@ -168,7 +165,7 @@ async fn handle_socket(mut socket: WebSocket, state: State<NotaryGlobals>) {
     );
 
     let msg = socket.next().await;
-    if let None = msg {
+    if msg.is_none() {
         error!("websocket connection closed before receiving notarization request message");
         return;
     }
@@ -210,5 +207,17 @@ async fn handle_socket(mut socket: WebSocket, state: State<NotaryGlobals>) {
         "received notarization request from websocket"
     );
 
-    // TODO:
+    // Fetch the configuration data from the store using the session_id
+    let session_id = notarization_req.session_id;
+    let State(notary_globals) = state;
+    let max_transcript_size = match notary_globals.store.lock().await.get(&session_id) {
+        Some(max_transcript_size) => max_transcript_size.to_owned(),
+        None => {
+            error!("Session id {session_id} does not exist");
+            return;
+        }
+    };
+
+    // Start the actual notarization session
+    websocket::websocket_notarize(socket, notary_globals, session_id, max_transcript_size).await;
 }
