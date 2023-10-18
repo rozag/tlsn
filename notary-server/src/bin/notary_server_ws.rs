@@ -1,6 +1,6 @@
 use notary_server::{
-    service, CliFields, NotarizationSessionRequest, NotaryGlobals, NotaryServerError,
-    NotaryServerProperties, NotarySignatureProperties,
+    service, CliFields, NotarizationRequestQuery, NotarizationSessionRequest, NotaryGlobals,
+    NotaryServerError, NotaryServerProperties, NotarySignatureProperties,
 };
 
 use std::{
@@ -112,7 +112,7 @@ async fn handle_socket(mut socket: WebSocket, state: State<NotaryGlobals>) {
         return;
     }
 
-    let session_req_json_str = match msg.unwrap() {
+    let notarization_req_json_str = match msg.unwrap() {
         Message::Text(text) => text,
         Message::Binary(bytes) => match String::from_utf8(bytes) {
             Err(e) => {
@@ -127,17 +127,18 @@ async fn handle_socket(mut socket: WebSocket, state: State<NotaryGlobals>) {
         }
     };
 
-    let session_req = serde_json::from_str::<NotarizationSessionRequest>(&session_req_json_str);
-    if let Err(e) = session_req {
+    let notarization_req =
+        serde_json::from_str::<NotarizationSessionRequest>(&notarization_req_json_str);
+    if let Err(e) = notarization_req {
         error!("failed to parse session request json from websocket: {e}");
         return;
     }
 
-    let session_req = session_req.unwrap();
+    let notarization_req = notarization_req.unwrap();
 
-    debug!(?session_req, "received session request from websocket");
+    debug!(?notarization_req, "received session request from websocket");
 
-    let body_bytes = service::initialize(state, Ok(session_req.into()))
+    let body_bytes = service::initialize(state, Ok(notarization_req.into()))
         .await
         .into_response()
         .into_body()
@@ -164,6 +165,49 @@ async fn handle_socket(mut socket: WebSocket, state: State<NotaryGlobals>) {
     debug!(
         "successfully sent session response to websocket: {:?}",
         String::from_utf8(body_bytes)
+    );
+
+    let msg = socket.next().await;
+    if let None = msg {
+        error!("websocket connection closed before receiving notarization request message");
+        return;
+    }
+
+    let msg = msg.unwrap();
+    if let Err(e) = msg {
+        error!("failed to receive notarization request message from websocket: {e}");
+        return;
+    }
+
+    let notarization_req_json_str = match msg.unwrap() {
+        Message::Text(text) => text,
+        Message::Binary(bytes) => match String::from_utf8(bytes) {
+            Err(e) => {
+                error!("failed to parse notarization request json str from websocket: {e}");
+                return;
+            }
+            Ok(text) => text,
+        },
+        other => {
+            error!(
+                "received unexpected message type (notarization request) from websocket: {other:?}"
+            );
+            return;
+        }
+    };
+
+    let notarization_req =
+        serde_json::from_str::<NotarizationRequestQuery>(&notarization_req_json_str);
+    if let Err(e) = notarization_req {
+        error!("failed to parse notarization request json from websocket: {e}");
+        return;
+    }
+
+    let notarization_req = notarization_req.unwrap();
+
+    debug!(
+        ?notarization_req,
+        "received notarization request from websocket"
     );
 
     // TODO:
