@@ -19,7 +19,10 @@ use axum::{
 };
 use eyre::{eyre, Result};
 use futures_util::{future, SinkExt, StreamExt};
-use hyper::server::{accept::Accept, conn::AddrIncoming};
+use hyper::{
+    body::HttpBody,
+    server::{accept::Accept, conn::AddrIncoming},
+};
 use p256::{ecdsa::SigningKey, pkcs8::DecodePrivateKey};
 use structopt::StructOpt;
 use tokio::net::TcpListener;
@@ -134,6 +137,34 @@ async fn handle_socket(mut socket: WebSocket, state: State<NotaryGlobals>) {
 
     debug!(?session_req, "received session request from websocket");
 
-    // ...
-    // service::initialize()
+    let body_bytes = service::initialize(state, Ok(session_req.into()))
+        .await
+        .into_response()
+        .into_body()
+        .data()
+        .await;
+    if let None = body_bytes {
+        error!("failed to deconstruct response option from initialize");
+        return;
+    }
+
+    let body_bytes = body_bytes.unwrap();
+    if let Err(e) = body_bytes {
+        error!("failed to deconstruct response result from initialize: {e}");
+        return;
+    }
+
+    let body_bytes = body_bytes.unwrap().to_vec();
+
+    if let Err(e) = socket.send(Message::Binary(body_bytes.clone())).await {
+        error!("failed to send session response to websocket: {e}");
+        return;
+    }
+
+    debug!(
+        "successfully sent session response to websocket: {:?}",
+        String::from_utf8(body_bytes)
+    );
+
+    // TODO:
 }
