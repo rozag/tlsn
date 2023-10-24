@@ -1,4 +1,4 @@
-use std::time::{Duration, UNIX_EPOCH};
+use web_time::{Duration, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 

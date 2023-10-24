@@ -30,6 +30,7 @@ rstest = { workspace = true, optional = true }
 hex = { workspace = true, optional = true }
 bytes = { workspace = true, features = ["serde"] }
 opaque-debug.workspace = true
+web-time.workspace = true
 
 bimap = { version = "0.6.3", features = ["serde"] }
 

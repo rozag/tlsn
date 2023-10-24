@@ -17,8 +17,8 @@ use std::{
     io::{self, Read, Write},
     ops::{Deref, DerefMut},
     sync::Arc,
-    time::{Duration, Instant},
 };
+use web_time::{Duration, Instant};
 
 fn duration_nanos(d: Duration) -> f64 {
     (d.as_secs() as f64) + f64::from(d.subsec_nanos()) / 1e9

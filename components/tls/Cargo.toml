@@ -52,3 +52,7 @@ rstest = "0.12"
 
 # misc
 derive_builder = "0.12"
+
+# std::time for wasm
+# https://github.com/daxpedda/web-time/tree/main
+web-time = "0.2"

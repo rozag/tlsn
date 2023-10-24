@@ -164,7 +164,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use web_time::Duration;
 
     use crate::cipher::Aes128Ctr;
 

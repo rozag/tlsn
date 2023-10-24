@@ -38,6 +38,7 @@ use tlsn_core::{
 use tracing::{debug, debug_span, instrument, Instrument};
 use uid_mux::{yamux, UidYamux};
 use utils_aio::{codec::BincodeMux, expect_msg_or_err, mux::MuxChannel};
+use web_time;
 
 use error::OTShutdownError;
 
@@ -157,7 +158,7 @@ impl Prover<state::Setup> {
 
         let (conn, conn_fut) = bind_client(socket, client);
 
-        let start_time = std::time::UNIX_EPOCH.elapsed().unwrap().as_secs();
+        let start_time = web_time::UNIX_EPOCH.elapsed().unwrap().as_secs();
 
         let fut = Box::pin({
             #[allow(clippy::let_and_return)]
