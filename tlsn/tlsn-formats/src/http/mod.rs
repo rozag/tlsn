@@ -205,4 +205,90 @@ mod tests {
         assert_eq!(&recv.data()[25..43], b"very-secret-cookie");
         assert_eq!(&recv.data()[180..194], b"Hello World!!!");
     }
+
+    #[test]
+    fn test_http_commit_duplicate_headers_call_build() {
+        let tx: &[u8] = b"GET / HTTP/1.1\r\nHost: localhost\r\nAccept: application/json\r\n\
+        Accept: application/xml\r\n\r\n";
+        let rx: &[u8] = b"HTTP/1.1 200 OK\r\nSet-Cookie: lang=en; Path=/\r\n\
+        Set-Cookie: fang=fen; Path=/\r\nContent-Length: 14\r\n\r\n{\"foo\": \"bar\"}";
+
+        let mut transcript_commitment_builder = TranscriptCommitmentBuilder::new(
+            fixtures::encoding_provider(tx, rx),
+            tx.len(),
+            rx.len(),
+        );
+        let requests = parse_requests(Bytes::copy_from_slice(tx)).unwrap();
+        let responses = parse_responses(Bytes::copy_from_slice(rx)).unwrap();
+
+        HttpCommitmentBuilder::new(&mut transcript_commitment_builder, &requests, &responses)
+            .build()
+            .unwrap();
+
+        let commitments = transcript_commitment_builder.build().unwrap();
+
+        // Path
+        assert!(commitments
+            .get_id_by_info(CommitmentKind::Blake3, (4..5).into(), Direction::Sent)
+            .is_some());
+        // Host
+        assert!(commitments
+            .get_id_by_info(CommitmentKind::Blake3, (22..31).into(), Direction::Sent)
+            .is_some());
+
+        // Set-Cookie 1
+        assert!(commitments
+            .get_id_by_info(CommitmentKind::Blake3, (29..44).into(), Direction::Received)
+            .is_some());
+        // Set-Cookie 2
+        assert!(commitments
+            .get_id_by_info(CommitmentKind::Blake3, (58..74).into(), Direction::Received)
+            .is_some());
+    }
+
+    #[test]
+    fn test_http_commit_duplicate_headers_call_headers() {
+        let tx: &[u8] = b"GET / HTTP/1.1\r\nHost: localhost\r\nAccept: application/json\r\n\
+        Accept: application/xml\r\n\r\n";
+        let rx: &[u8] = b"HTTP/1.1 200 OK\r\nSet-Cookie: lang=en; Path=/\r\n\
+        Set-Cookie: fang=fen; Path=/\r\nContent-Length: 14\r\n\r\n{\"foo\": \"bar\"}";
+
+        let mut transcript_commitment_builder = TranscriptCommitmentBuilder::new(
+            fixtures::encoding_provider(tx, rx),
+            tx.len(),
+            rx.len(),
+        );
+        let requests = parse_requests(Bytes::copy_from_slice(tx)).unwrap();
+        let responses = parse_responses(Bytes::copy_from_slice(rx)).unwrap();
+
+        let mut http_builder =
+            HttpCommitmentBuilder::new(&mut transcript_commitment_builder, &requests, &responses);
+
+        let mut req_builder = http_builder.request(0).unwrap();
+        req_builder.path().unwrap();
+        req_builder.headers().unwrap();
+
+        let mut resp_builder = http_builder.response(0).unwrap();
+        resp_builder.headers().unwrap();
+
+        let commitments = transcript_commitment_builder.build().unwrap();
+
+        // Path
+        assert!(commitments
+            .get_id_by_info(CommitmentKind::Blake3, (4..5).into(), Direction::Sent)
+            .is_some());
+        // Host
+        assert!(commitments
+            .get_id_by_info(CommitmentKind::Blake3, (22..31).into(), Direction::Sent)
+            .is_some());
+
+        // Set-Cookie 1
+        assert!(commitments
+            .get_id_by_info(CommitmentKind::Blake3, (29..44).into(), Direction::Received)
+            .is_some());
+        // Set-Cookie 2
+        assert!(commitments
+            .get_id_by_info(CommitmentKind::Blake3, (58..74).into(), Direction::Received)
+            .is_some());
+    }
 }
