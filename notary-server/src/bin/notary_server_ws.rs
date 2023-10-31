@@ -7,7 +7,10 @@ use notary_server::{
     NotaryServerError, NotaryServerProperties, NotarySignatureProperties,
 };
 
-use std::net::{IpAddr, SocketAddr};
+use std::{
+    env,
+    net::{IpAddr, SocketAddr},
+};
 
 use axum::{extract::State, http::StatusCode, response::IntoResponse, routing, Router, Server};
 use eyre::{eyre, Result};
@@ -15,26 +18,46 @@ use futures_util::StreamExt;
 use hyper::body::HttpBody;
 use p256::{ecdsa::SigningKey, pkcs8::DecodePrivateKey};
 use structopt::StructOpt;
+use tokio::runtime::Builder;
 use tracing::{debug, error, info};
 
-#[tokio::main]
-async fn main() -> Result<(), NotaryServerError> {
+const ENV_VAR_TOKIO_WORKERS: &str = "TOKIO_WORKERS";
+
+const DEFAULT_TOKIO_WORKERS: &str = "1";
+
+fn main() {
     // Load command line arguments which contains the config file location
     let cli_fields: CliFields = CliFields::from_args();
     let config_file = &cli_fields.config_file;
-    let config: NotaryServerProperties = notary_server::parse_config_file(config_file)?;
+    let config: NotaryServerProperties =
+        notary_server::parse_config_file(config_file).expect("failed to parse config file");
 
     // Set up tracing for logging
-    notary_server::init_tracing(&config).map_err(|err| eyre!("failed to set up tracing: {err}"))?;
+    notary_server::init_tracing(&config).expect("failed to initialize tracing");
 
     debug!(?config, "server config loaded");
 
-    // Run the server
-    run_ws_server(&config).await
+    let threads_str = env::var(ENV_VAR_TOKIO_WORKERS).unwrap_or(DEFAULT_TOKIO_WORKERS.to_string());
+    let threads: usize = threads_str
+        .parse()
+        .expect(format!("failed to parse {ENV_VAR_TOKIO_WORKERS} env var: {threads_str}").as_str());
+
+    Builder::new_multi_thread()
+        .worker_threads(threads)
+        .enable_all()
+        .build()
+        .expect("failed to build tokio runtime")
+        .block_on(async move {
+            info!("launching run_ws_server with {threads} worker threads");
+            run_ws_server(config)
+                .await
+                .expect("run_ws_server failed with error");
+            info!("run_ws_server finished successfully");
+        })
 }
 
 #[tracing::instrument(skip(config))]
-async fn run_ws_server(config: &NotaryServerProperties) -> Result<(), NotaryServerError> {
+async fn run_ws_server(config: NotaryServerProperties) -> Result<(), NotaryServerError> {
     if config.tls_signature.is_some() {
         return Err(NotaryServerError::Unexpected(eyre!(
             "TLS support is not yet implemented for notary_server_ws"
