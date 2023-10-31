@@ -21,6 +21,7 @@ pub fn init_tracing(config: &NotaryServerProperties) -> Result<()> {
     let format_layer = tracing_subscriber::fmt::layer()
         // Use a more compact, abbreviated log format
         .compact()
+        .with_ansi(false) // Disable ANSI color codes
         .with_thread_ids(true)
         .with_thread_names(true);
 
