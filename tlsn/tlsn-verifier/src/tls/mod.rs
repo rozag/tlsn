@@ -9,7 +9,7 @@ pub use error::VerifierError;
 
 use std::{
     pin::Pin,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
 use futures::{
@@ -119,12 +119,19 @@ impl Verifier<state::Initialized> {
     where
         T: Into<Signature>,
     {
-        self.setup(socket)
-            .await?
-            .run()
-            .await?
-            .notarize(signer)
-            .await
+        let start_time = Instant::now();
+        let setup = self.setup(socket).await?;
+        println!("DBG notarize: setup took {:?}", start_time.elapsed());
+
+        let start_time = Instant::now();
+        let run = setup.run().await?;
+        println!("DBG notarize: run took {:?}", start_time.elapsed());
+
+        let start_time = Instant::now();
+        let notarize = run.notarize(signer).await;
+        println!("DBG notarize: notarize took {:?}", start_time.elapsed());
+
+        notarize
     }
 }
 
@@ -148,11 +155,13 @@ impl Verifier<state::Setup> {
             .unwrap()
             .as_secs();
 
+        let start = Instant::now();
         futures::select! {
             res = mpc_tls.run().fuse() => res?,
             _ = &mut mux_fut => return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof))?,
             res = ot_fut => return Err(res.map(|_| ()).expect_err("future will not return Ok here"))
         };
+        println!("DBG run: mpc_tls.run took {:?}", start.elapsed());
 
         #[cfg(feature = "tracing")]
         info!("Finished TLS session");
