@@ -86,11 +86,17 @@ impl Verifier<state::Initialized> {
         };
 
         let encoder_seed: [u8; 32] = rand::rngs::OsRng.gen();
+
+        let start_time = Instant::now();
         let mpc_setup_fut = setup_mpc_backend(&self.config, mux_control.clone(), encoder_seed);
         let (mpc_tls, vm, ot_send, ot_recv, gf2, ot_fut) = futures::select! {
             res = mpc_setup_fut.fuse() => res?,
             _ = &mut mux_fut => return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof))?,
         };
+        println!(
+            "DBG notarize - setup - setup_mpc_backend: {:?}",
+            start_time.elapsed()
+        );
 
         Ok(Verifier {
             config: self.config,
@@ -119,17 +125,21 @@ impl Verifier<state::Initialized> {
     where
         T: Into<Signature>,
     {
+        let full_start_time = Instant::now();
+
         let start_time = Instant::now();
         let setup = self.setup(socket).await?;
-        println!("DBG notarize: setup took {:?}", start_time.elapsed());
+        println!("DBG notarize - setup: {:?}", start_time.elapsed());
 
         let start_time = Instant::now();
         let run = setup.run().await?;
-        println!("DBG notarize: run took {:?}", start_time.elapsed());
+        println!("DBG notarize - run: {:?}", start_time.elapsed());
 
         let start_time = Instant::now();
         let notarize = run.notarize(signer).await;
-        println!("DBG notarize: notarize took {:?}", start_time.elapsed());
+        println!("DBG notarize - notarize: {:?}", start_time.elapsed());
+
+        println!("DBG notarize: {:?}", full_start_time.elapsed());
 
         notarize
     }
@@ -161,7 +171,7 @@ impl Verifier<state::Setup> {
             _ = &mut mux_fut => return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof))?,
             res = ot_fut => return Err(res.map(|_| ()).expect_err("future will not return Ok here"))
         };
-        println!("DBG run: mpc_tls.run took {:?}", start.elapsed());
+        println!("DBG notarize - run - mpc_tls.run: {:?}", start.elapsed());
 
         #[cfg(feature = "tracing")]
         info!("Finished TLS session");
@@ -339,7 +349,7 @@ async fn setup_mpc_backend(
             .map_err(VerifierError::from)
     )?;
     println!(
-        "DBG setup_mpc_backend: setup took {:?}",
+        "DBG notarize - setup - setup_mpc_backend - setup: {:?}",
         start_time.elapsed()
     );
 
@@ -354,7 +364,10 @@ async fn setup_mpc_backend(
                     ot_sender_actor.run().map_err(VerifierError::from),
                     ot_receiver_actor.run().map_err(VerifierError::from)
                 )?;
-                println!("DBG setup_mpc_backend: run took {:?}", start_time.elapsed());
+                println!(
+                    "DBG notarize - setup - setup_mpc_backend - run: {:?}",
+                    start_time.elapsed()
+                );
 
                 Ok(ot_sender_actor)
             }
@@ -402,7 +415,7 @@ async fn setup_mpc_backend(
     .await
     .map_err(|e| VerifierError::MpcError(Box::new(e)))?;
     println!(
-        "DBG setup_mpc_backend: setup_components took {:?}",
+        "DBG notarize - setup - setup_mpc_backend - setup_components: {:?}",
         start_time.elapsed()
     );
 
@@ -412,7 +425,7 @@ async fn setup_mpc_backend(
     let start_time = Instant::now();
     mpc_tls.setup().await?;
     println!(
-        "DBG setup_mpc_backend: mpc_tls.setup took {:?}",
+        "DBG notarize - setup - setup_mpc_backend - mpc_tls.setup: {:?}",
         start_time.elapsed()
     );
 

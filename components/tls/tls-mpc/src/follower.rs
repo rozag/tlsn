@@ -270,15 +270,24 @@ impl MpcTlsFollower {
     pub async fn run(&mut self) -> Result<(), MpcTlsError> {
         let start = Instant::now();
         self.run_key_exchange().await?;
-        println!("DBG run: run_key_exchange took {:?}", start.elapsed());
+        println!(
+            "DBG notarize - run - mpc_tls.run - run_key_exchange: {:?}",
+            start.elapsed()
+        );
 
         let start = Instant::now();
         self.run_client_finished().await?;
-        println!("DBG run: run_client_finished took {:?}", start.elapsed());
+        println!(
+            "DBG notarize - run - mpc_tls.run - run_client_finished: {:?}",
+            start.elapsed()
+        );
 
         let start = Instant::now();
         self.run_server_finished().await?;
-        println!("DBG run: run_server_finished took {:?}", start.elapsed());
+        println!(
+            "DBG notarize - run - mpc_tls.run - run_server_finished: {:?}",
+            start.elapsed()
+        );
 
         let start = Instant::now();
         loop {
@@ -306,7 +315,10 @@ impl MpcTlsFollower {
                 break;
             }
         }
-        println!("DBG run: loop encrypt/decrypt took {:?}", start.elapsed());
+        println!(
+            "DBG notarize - run - mpc_tls.run - loop encrypt/decrypt: {:?}",
+            start.elapsed()
+        );
 
         Ok(())
     }
