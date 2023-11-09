@@ -87,8 +87,19 @@ impl MpcTlsFollower {
 
     /// Performs any one-time setup operations.
     pub async fn setup(&mut self) -> Result<(), MpcTlsError> {
+        let start_time = Instant::now();
         let pms = self.ke.setup().await?;
+        println!(
+            "DBG notarize - setup - setup_mpc_backend - mpc_tls.setup - ke.setup: {:?}",
+            start_time.elapsed()
+        );
+
+        let start_time = Instant::now();
         self.prf.setup(pms.into_value()).await?;
+        println!(
+            "DBG notarize - setup - setup_mpc_backend - mpc_tls.setup - prf.setup: {:?}",
+            start_time.elapsed()
+        );
 
         Ok(())
     }

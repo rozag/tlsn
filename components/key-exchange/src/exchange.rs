@@ -7,7 +7,7 @@ use mpz_garble::{value::ValueRef, Decode, Execute, Load, Memory};
 use mpz_share_conversion_core::fields::{p256::P256, Field};
 use p256::{EncodedPoint, PublicKey, SecretKey};
 use point_addition::PointAddition;
-use std::fmt::Debug;
+use std::{fmt::Debug, time::Instant};
 
 use utils_aio::expect_msg_or_err;
 
@@ -346,6 +346,7 @@ where
         let pms_2 = self.executor.new_output::<[u8; 32]>("pms/2")?;
         let eq = self.executor.new_output::<[u8; 32]>("pms/eq")?;
 
+        let start_time = Instant::now();
         self.executor
             .load(
                 build_pms_circuit(),
@@ -358,6 +359,10 @@ where
                 &[pms_1.clone(), pms_2.clone(), eq.clone()],
             )
             .await?;
+        println!(
+            "DBG notarize - setup - setup_mpc_backend - mpc_tls.setup - ke.setup - executor.load: {:?}",
+            start_time.elapsed()
+        );
 
         self.state = State::Setup {
             share_a,

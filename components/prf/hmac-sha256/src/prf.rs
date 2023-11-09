@@ -1,6 +1,7 @@
 use std::{
     fmt::Debug,
     sync::{Arc, OnceLock},
+    time::Instant,
 };
 
 use async_trait::async_trait;
@@ -229,14 +230,26 @@ where
             Role::Follower => Visibility::Blind,
         };
 
+        let start_time = Instant::now();
         // Perform pre-computation for all circuits.
         let (randoms, hash_state, keys) =
             setup_session_keys(&mut self.thread_0, pms.clone(), visibility).await?;
+        println!(
+            "DBG notarize - setup - setup_mpc_backend - mpc_tls.setup - \
+                prf.setup - setup_session_keys: {:?}",
+            start_time.elapsed()
+        );
 
+        let start_time = Instant::now();
         let (cf_vd, sf_vd) = futures::try_join!(
             setup_finished_msg(&mut self.thread_0, Msg::Cf, hash_state.clone(), visibility),
             setup_finished_msg(&mut self.thread_1, Msg::Sf, hash_state.clone(), visibility),
         )?;
+        println!(
+            "DBG notarize - setup - setup_mpc_backend - mpc_tls.setup - \
+                prf.setup - setup_finished_msg: {:?}",
+            start_time.elapsed()
+        );
 
         self.state = state::State::SessionKeys(state::SessionKeys {
             pms,
@@ -395,6 +408,7 @@ async fn setup_session_keys<T: Memory + Load + Send>(
         .get()
         .expect("session keys circuit is set");
 
+    let start_time = Instant::now();
     thread
         .load(
             circ.clone(),
@@ -409,6 +423,11 @@ async fn setup_session_keys<T: Memory + Load + Send>(
             ],
         )
         .await?;
+    println!(
+        "DBG notarize - setup - setup_mpc_backend - mpc_tls.setup - \
+            prf.setup - setup_session_keys - thread.load: {:?}",
+        start_time.elapsed()
+    );
 
     Ok((
         Randoms {
@@ -459,6 +478,7 @@ async fn setup_finished_msg<T: Memory + Load + Send>(
 
     let circ = circ.get().expect("session keys circuit is set");
 
+    let start_time = Instant::now();
     thread
         .load(
             circ.clone(),
@@ -470,6 +490,11 @@ async fn setup_finished_msg<T: Memory + Load + Send>(
             &[vd.clone()],
         )
         .await?;
+    println!(
+        "DBG notarize - setup - setup_mpc_backend - mpc_tls.setup - \
+                prf.setup - setup_finished_msg - thread.load: {:?}",
+        start_time.elapsed()
+    );
 
     Ok(VerifyData { handshake_hash, vd })
 }
