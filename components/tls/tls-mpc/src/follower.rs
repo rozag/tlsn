@@ -11,6 +11,7 @@ use prf::SessionKeys;
 use aead::Aead;
 use hmac_sha256::Prf;
 use ke::KeyExchange;
+use std::time::Instant;
 use tls_core::{
     cipher::make_tls12_aad,
     key::PublicKey,
@@ -267,10 +268,19 @@ impl MpcTlsFollower {
         tracing::instrument(level = "trace", skip(self), err)
     )]
     pub async fn run(&mut self) -> Result<(), MpcTlsError> {
+        let start = Instant::now();
         self.run_key_exchange().await?;
-        self.run_client_finished().await?;
-        self.run_server_finished().await?;
+        println!("DBG run: run_key_exchange took {:?}", start.elapsed());
 
+        let start = Instant::now();
+        self.run_client_finished().await?;
+        println!("DBG run: run_client_finished took {:?}", start.elapsed());
+
+        let start = Instant::now();
+        self.run_server_finished().await?;
+        println!("DBG run: run_server_finished took {:?}", start.elapsed());
+
+        let start = Instant::now();
         loop {
             let msg = match self.channel.next().await {
                 Some(msg) => msg?,
@@ -296,6 +306,7 @@ impl MpcTlsFollower {
                 break;
             }
         }
+        println!("DBG run: loop encrypt/decrypt took {:?}", start.elapsed());
 
         Ok(())
     }

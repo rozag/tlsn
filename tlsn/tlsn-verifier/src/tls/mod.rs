@@ -329,6 +329,7 @@ async fn setup_mpc_backend(
     #[cfg(feature = "tracing")]
     debug!("Starting OT setup");
 
+    let start_time = Instant::now();
     futures::try_join!(
         ot_sender_actor
             .setup(config.ot_count())
@@ -337,6 +338,10 @@ async fn setup_mpc_backend(
             .setup(config.ot_count())
             .map_err(VerifierError::from)
     )?;
+    println!(
+        "DBG setup_mpc_backend: setup took {:?}",
+        start_time.elapsed()
+    );
 
     #[cfg(feature = "tracing")]
     debug!("OT setup complete");
@@ -344,10 +349,12 @@ async fn setup_mpc_backend(
     let ot_fut = OTFuture {
         fut: Box::pin(
             async move {
+                let start_time = Instant::now();
                 futures::try_join!(
                     ot_sender_actor.run().map_err(VerifierError::from),
                     ot_receiver_actor.run().map_err(VerifierError::from)
                 )?;
+                println!("DBG setup_mpc_backend: run took {:?}", start_time.elapsed());
 
                 Ok(ot_sender_actor)
             }
@@ -381,6 +388,7 @@ async fn setup_mpc_backend(
 
     let mpc_tls_config = config.build_mpc_tls_config();
 
+    let start_time = Instant::now();
     let (ke, prf, encrypter, decrypter) = setup_components(
         mpc_tls_config.common(),
         TlsRole::Follower,
@@ -393,11 +401,20 @@ async fn setup_mpc_backend(
     )
     .await
     .map_err(|e| VerifierError::MpcError(Box::new(e)))?;
+    println!(
+        "DBG setup_mpc_backend: setup_components took {:?}",
+        start_time.elapsed()
+    );
 
     let channel = mux.get_channel(mpc_tls_config.common().id()).await?;
     let mut mpc_tls = MpcTlsFollower::new(mpc_tls_config, channel, ke, prf, encrypter, decrypter);
 
+    let start_time = Instant::now();
     mpc_tls.setup().await?;
+    println!(
+        "DBG setup_mpc_backend: mpc_tls.setup took {:?}",
+        start_time.elapsed()
+    );
 
     #[cfg(feature = "tracing")]
     debug!("MPC backend setup complete");
